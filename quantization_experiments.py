@@ -123,7 +123,6 @@ def run_latency_test(model_to_run, data_loader):
         start_time = time.time()
         model_to_run(inputs.float())
         elapsed_time = time.time() - start_time
-
         elapsed_times.append(elapsed_time)
     avg_elapsed_time = sum(elapsed_times) / len(elapsed_times)
     print(f"Average inference time: {avg_elapsed_time}\n")
