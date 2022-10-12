@@ -1,3 +1,5 @@
+import time
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -86,7 +88,9 @@ def test(model, test_loader):
     return acc, y_true, y_pred
 
 
-def run_model(model_to_run, train_data_loader, test_data_loader, optimizer, criterion):
+def run_model(model_to_run, train_data_loader, test_data_loader, criterion):
+    optimizer = torch.optim.Adam(model_to_run.parameters(), lr=lr, betas=(0.9, 0.999))
+
     running_loss = []
     running_test_acc = []
     t = trange(num_epochs, desc="Training loss", leave=True)
@@ -104,6 +108,25 @@ def run_model(model_to_run, train_data_loader, test_data_loader, optimizer, crit
 
     acc_per_epoch = [np.mean(acc_per_epoch) for acc_per_epoch in running_test_acc]
     display_loss_plot(acc_per_epoch, title="Test accuracy", ylabel="Accuracy [%]")
+
+
+def run_latency_test(model_to_run, data_loader):
+    model_to_run.eval()
+    elapsed_times = []
+
+    print("--> Running inference time test <---")
+    n_iterations = 100
+    for i in range(n_iterations):
+        inputs, target = next(iter(data_loader))
+
+        # start time here
+        start_time = time.time()
+        model_to_run(inputs.float())
+        elapsed_time = time.time() - start_time
+
+        elapsed_times.append(elapsed_time)
+    avg_elapsed_time = sum(elapsed_times) / len(elapsed_times)
+    print(f"Average inference time: {avg_elapsed_time}\n")
 
 
 def display_loss_plot(losses, title="Training loss", xlabel="Iterations", ylabel="Loss"):
@@ -143,15 +166,14 @@ if __name__ == "__main__":
 
     # specify loss criterion and optimizer
     criterion = nn.BCEWithLogitsLoss().to(device)
-    optimizer = torch.optim.Adam(quantized_model.parameters(), lr=lr, betas=(0.9, 0.999))
-
-    run_model(quantized_model, train_quantized_loader, test_quantized_loader, optimizer, criterion)
+    run_model(quantized_model, train_quantized_loader, test_quantized_loader, criterion)
 
     test_acc, y_true, y_pred = test(quantized_model, test_quantized_loader)
     display_confusion_matrix(y_true, y_pred, "Quantized network")
     print("[Quantized network]")
     print(f"--> Test accuracy: {test_acc * 100}%")
-    # print(f"--> Test loss: {test_loss}")
+
+    run_latency_test(quantized_model, test_quantized_loader)
 
     # save the brevitas model to disk
     torch.save(quantized_model.state_dict(), "state_dict_quantized-model.pth")
@@ -164,15 +186,14 @@ if __name__ == "__main__":
     non_quantized_model.to(device)
 
     # specify loss criterion and optimizer
-    optimizer = torch.optim.Adam(non_quantized_model.parameters(), lr=lr, betas=(0.9, 0.999))
-
-    run_model(non_quantized_model, train_quantized_loader, test_quantized_loader, optimizer, criterion)
+    run_model(non_quantized_model, train_quantized_loader, test_quantized_loader, criterion)
 
     test_acc, y_true, y_pred = test(non_quantized_model, test_quantized_loader)
     display_confusion_matrix(y_true, y_pred, "Non-Quantized network")
     print("[Non-Quantized network]")
     print(f"--> Test accuracy: {test_acc * 100}%")
-    # print(f"--> Test loss: {test_loss}")
+
+    run_latency_test(non_quantized_model, test_quantized_loader)
 
     # save the brevitas model to disk
     torch.save(non_quantized_model.state_dict(), "state_dict_non-quantized-model.pth")
