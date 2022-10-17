@@ -9,7 +9,7 @@ from sklearn.metrics import accuracy_score
 from torch.utils.data import TensorDataset, DataLoader
 from tqdm import trange
 
-from neural_networks import get_quantized_network, get_non_quantized_network
+from neural_networks import get_quantized_network_with_bits
 
 # local constants
 batch_size = 1000
@@ -57,6 +57,7 @@ def train(model, train_loader, optimizer, criterion):
 
 def display_confusion_matrix(actual, predicted, title):
     confusion_matrix = metrics.confusion_matrix(actual, predicted)
+    print(f"--> Confusion matrix: {confusion_matrix}")
     cm_display = metrics.ConfusionMatrixDisplay(confusion_matrix=confusion_matrix)
     cm_display.plot()
     plt.title(title)
@@ -160,39 +161,44 @@ if __name__ == "__main__":
     # Quantized model
     ##################
     # get model for training
-    quantized_model = get_quantized_network()
-    quantized_model.to(device)
+    # quantized_model = get_quantized_network()
+    weight_bits = [4]
+    act_bits = [4, 8]
+    for weight_bit in weight_bits:
+        for act_bit in act_bits:
+            quantized_model = get_quantized_network_with_bits(weight_bit, act_bit)
+            quantized_model.to(device)
 
-    # specify loss criterion and optimizer
-    criterion = nn.BCEWithLogitsLoss().to(device)
-    run_model(quantized_model, train_quantized_loader, test_quantized_loader, criterion)
+            # specify loss criterion and optimizer
+            criterion = nn.BCEWithLogitsLoss().to(device)
+            run_model(quantized_model, train_quantized_loader, test_quantized_loader, criterion)
 
-    test_acc, y_true, y_pred = test(quantized_model, test_quantized_loader)
-    display_confusion_matrix(y_true, y_pred, "Quantized network")
-    print("[Quantized network]")
-    print(f"--> Test accuracy: {test_acc * 100}%")
+            test_acc, y_true, y_pred = test(quantized_model, test_quantized_loader)
+            display_confusion_matrix(y_true, y_pred, f"Quantized network [weight: {weight_bit}][act: {act_bit}]")
+            print(f"[Quantized network] [weight: {weight_bit}][act: {act_bit}]")
+            print(f"--> Test accuracy: {test_acc * 100}%")
 
-    run_latency_test(quantized_model, test_quantized_loader)
+            run_latency_test(quantized_model, test_quantized_loader)
 
-    # save the brevitas model to disk
-    torch.save(quantized_model.state_dict(), "state_dict_quantized-model.pth")
+            # save the brevitas model to disk
+            torch.save(quantized_model.state_dict(), "state_dict_quantized-model.pth")
 
     ######################
     # Non-Quantized model
     ######################
     # get model for training
-    non_quantized_model = get_non_quantized_network()
-    non_quantized_model.to(device)
-
-    # specify loss criterion and optimizer
-    run_model(non_quantized_model, train_quantized_loader, test_quantized_loader, criterion)
-
-    test_acc, y_true, y_pred = test(non_quantized_model, test_quantized_loader)
-    display_confusion_matrix(y_true, y_pred, "Non-Quantized network")
-    print("[Non-Quantized network]")
-    print(f"--> Test accuracy: {test_acc * 100}%")
-
-    run_latency_test(non_quantized_model, test_quantized_loader)
-
-    # save the brevitas model to disk
-    torch.save(non_quantized_model.state_dict(), "state_dict_non-quantized-model.pth")
+    # non_quantized_model = get_non_quantized_network()
+    # non_quantized_model.to(device)
+    #
+    # # specify loss criterion and optimizer
+    # run_model(non_quantized_model, train_quantized_loader, test_quantized_loader, criterion)
+    #
+    # test_acc, y_true, y_pred = test(non_quantized_model, test_quantized_loader)
+    # display_confusion_matrix(y_true, y_pred, "Non-Quantized network")
+    # print("[Non-Quantized network]")
+    # print(f"--> Test accuracy: {test_acc * 100}%")
+    #
+    # run_latency_test(non_quantized_model, test_quantized_loader)
+    #
+    # # save the brevitas model to disk
+    # torch.save(non_quantized_model.state_dict(), "state_dict_non-quantized-model.pth")
