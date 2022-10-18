@@ -98,7 +98,7 @@ if __name__ == "__main__":
     model_for_sim.save(verif_model_filename)
 
     n_verification_inputs = 100
-    test_quantized_dataset = get_preqnt_dataset("data", False)
+    test_quantized_dataset = get_preqnt_dataset("../data", False)
     input_tensor = test_quantized_dataset.tensors[0][:n_verification_inputs]
     print("input_tensor.shape: " + str(input_tensor.shape))
 

@@ -130,8 +130,8 @@ def test_padded_bipolar(model, test_loader):
 
 
 if __name__ == "__main__":
-    train_quantized_dataset = get_preqnt_dataset("data", True)
-    test_quantized_dataset = get_preqnt_dataset("data", False)
+    train_quantized_dataset = get_preqnt_dataset("../data", True)
+    test_quantized_dataset = get_preqnt_dataset("../data", False)
 
     print("Samples in each set: train = %d, test = %s" % (len(train_quantized_dataset), len(test_quantized_dataset)))
     print("Shape of one input sample:" + str(train_quantized_dataset[0][0].shape))

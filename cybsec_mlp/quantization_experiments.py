@@ -58,6 +58,12 @@ def train(model, train_loader, optimizer, criterion):
 def display_confusion_matrix(actual, predicted, title):
     confusion_matrix = metrics.confusion_matrix(actual, predicted)
     print(f"--> Confusion matrix: {confusion_matrix}")
+
+    class_bad_acc = confusion_matrix[0][0] / np.sum(confusion_matrix[0])
+    class_normal_acc = confusion_matrix[1][1] / np.sum(confusion_matrix[1])
+    print(f"--> Class: Bad accuracy: {class_bad_acc}")
+    print(f"--> Class: Normal accuracy: {class_normal_acc}")
+
     cm_display = metrics.ConfusionMatrixDisplay(confusion_matrix=confusion_matrix)
     cm_display.plot()
     plt.title(title)
@@ -162,10 +168,11 @@ if __name__ == "__main__":
     ##################
     # get model for training
     # quantized_model = get_quantized_network()
-    weight_bits = [4]
-    act_bits = [4, 8]
+    weight_bits = [16, 32]
+    act_bits = [2, 4, 6, 8]
     for weight_bit in weight_bits:
         for act_bit in act_bits:
+            print(f"[Quantized network] [weight: {weight_bit}][act: {act_bit}]")
             quantized_model = get_quantized_network_with_bits(weight_bit, act_bit)
             quantized_model.to(device)
 
@@ -175,7 +182,6 @@ if __name__ == "__main__":
 
             test_acc, y_true, y_pred = test(quantized_model, test_quantized_loader)
             display_confusion_matrix(y_true, y_pred, f"Quantized network [weight: {weight_bit}][act: {act_bit}]")
-            print(f"[Quantized network] [weight: {weight_bit}][act: {act_bit}]")
             print(f"--> Test accuracy: {test_acc * 100}%")
 
             run_latency_test(quantized_model, test_quantized_loader)
