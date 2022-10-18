@@ -1,5 +1,5 @@
 from brevitas.nn import QuantLinear, QuantReLU
-from torch.nn import Sequential, Linear, ReLU, Dropout, BatchNorm1d
+from torch.nn import Sequential, Linear, ReLU, Dropout, BatchNorm1d, Conv2d, MaxPool2d
 
 input_size = 593
 hidden1 = 64
@@ -50,5 +50,32 @@ def get_non_quantized_network():
         Dropout(0.5),
         ReLU(),
         Linear(hidden3, num_classes, bias=True)
+    )
+    return model
+
+
+def get_non_quantized_conv2d_network(num_outputs):
+    model = Sequential(
+        Conv2d(
+            in_channels=1,
+            out_channels=16,
+            kernel_size=5,
+            stride=1,
+            padding=2,
+        ),
+        ReLU(),
+        MaxPool2d(kernel_size=2),
+
+        Conv2d(
+            in_channels=16,
+            out_channels=32,
+            kernel_size=5,
+            stride=1,
+            padding=2,
+        ),
+        ReLU(),
+        MaxPool2d(kernel_size=2),
+
+        Linear(32 * 7 * 7, num_outputs)
     )
     return model
