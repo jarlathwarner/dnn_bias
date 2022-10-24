@@ -130,8 +130,8 @@ def test_padded_bipolar(model, test_loader):
 
 
 if __name__ == "__main__":
-    train_quantized_dataset = get_preqnt_dataset("../data", True)
-    test_quantized_dataset = get_preqnt_dataset("../data", False)
+    train_quantized_dataset = get_preqnt_dataset("../../data", True)
+    test_quantized_dataset = get_preqnt_dataset("../../data", False)
 
     print("Samples in each set: train = %d, test = %s" % (len(train_quantized_dataset), len(test_quantized_dataset)))
     print("Shape of one input sample:" + str(train_quantized_dataset[0][0].shape))
@@ -199,7 +199,7 @@ if __name__ == "__main__":
     test(quantized_model, test_quantized_loader)
 
     # save the brevitas model to disk
-    torch.save(quantized_model.state_dict(), "state_dict_self-trained.pth")
+    torch.save(quantized_model.state_dict(), "../model_files/state_dict_self-trained.pth")
 
     # move the model to CPU before surgery
     quantized_model = quantized_model.cpu()
@@ -221,7 +221,7 @@ if __name__ == "__main__":
 
     test_padded_bipolar(model_for_export, test_quantized_loader)
 
-    ready_model_filename = "cybsec-mlp-ready.onnx"
+    ready_model_filename = "../onnx_files/cybsec-mlp-ready.onnx"
     input_shape = (1, 600)
 
     # create a QuantTensor instance to mark input as bipolar during export

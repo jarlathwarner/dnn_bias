@@ -12,7 +12,7 @@ weight_bit_width = 2
 act_bit_width = 2
 
 
-def get_quantized_network_with_bits(weight_bits, act_bits):
+def get_quantized_network_with_bits(weight_bits, act_bits, num_outputs):
     model = Sequential(
         QuantLinear(input_size, hidden1, bias=True, weight_bit_width=weight_bits),
         BatchNorm1d(hidden1),
@@ -26,13 +26,13 @@ def get_quantized_network_with_bits(weight_bits, act_bits):
         BatchNorm1d(hidden3),
         Dropout(0.5),
         QuantReLU(bit_width=act_bits),
-        QuantLinear(hidden3, num_classes, bias=True, weight_bit_width=weight_bits)
+        QuantLinear(hidden3, num_outputs, bias=True, weight_bit_width=weight_bits)
     )
     return model
 
 
-def get_quantized_network():
-    return get_quantized_network_with_bits(weight_bit_width, act_bit_width)
+def get_quantized_network(num_outputs=num_classes):
+    return get_quantized_network_with_bits(weight_bit_width, act_bit_width, num_outputs)
 
 
 def get_non_quantized_network():

@@ -65,7 +65,7 @@ def inference_with_finn_onnx(current_inp):
 
 
 if __name__ == "__main__":
-    ready_model_filename = "cybsec-mlp-ready.onnx"
+    ready_model_filename = "../onnx_files/cybsec-mlp-ready.onnx"
     model_for_sim = ModelWrapper(ready_model_filename)
 
     dir(model_for_sim)
@@ -94,11 +94,11 @@ if __name__ == "__main__":
     model_for_sim = model_for_sim.transform(InferDataTypes())
     model_for_sim = model_for_sim.transform(RemoveStaticGraphInputs())
 
-    verif_model_filename = "cybsec-mlp-verification.onnx"
+    verif_model_filename = "../onnx_files/cybsec-mlp-verification.onnx"
     model_for_sim.save(verif_model_filename)
 
     n_verification_inputs = 100
-    test_quantized_dataset = get_preqnt_dataset("../data", False)
+    test_quantized_dataset = get_preqnt_dataset("../../data", False)
     input_tensor = test_quantized_dataset.tensors[0][:n_verification_inputs]
     print("input_tensor.shape: " + str(input_tensor.shape))
 
