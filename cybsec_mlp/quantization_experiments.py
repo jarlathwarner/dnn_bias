@@ -1,8 +1,11 @@
+import pathlib
 import sys
 import time
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+import seaborn as sns
 import torch
 import torch.nn as nn
 from sklearn import metrics
@@ -10,15 +13,13 @@ from sklearn.metrics import accuracy_score, classification_report
 from sklearn.preprocessing import LabelEncoder
 from torch.utils.data import TensorDataset, DataLoader
 from tqdm import trange
-import pandas as pd
 from tqdm.notebook import tqdm
 
-from neural_networks import get_quantized_network_with_bits
-import pathlib
+from neural_networks import get_quantized_network_with_bits, get_non_quantized_network
 
 # local constants
-batch_size = 1000
-num_epochs = 25
+batch_size = 256
+num_epochs = 50
 lr = 0.001
 num_classes = 10
 
@@ -26,6 +27,10 @@ dataset_dir = pathlib.Path("data")
 binarized_dataset_dir = pathlib.Path(dataset_dir, "unsw_nb15_binarized.npz")
 non_binarized_train_dataset_dir = pathlib.Path(dataset_dir, "UNSW_NB15_training-set.csv")
 non_binarized_test_dataset_dir = pathlib.Path(dataset_dir, "UNSW_NB15_testing-set.csv")
+results_dir = pathlib.Path("cybsec_mlp/results")
+
+classes = ['Analysis', 'Backdoor', 'DoS', 'Exploits', 'Fuzzers', 'Generic', 'Normal', 'Reconnaissance', 'Shellcode',
+           'Worms']
 
 
 def get_binarized_data(data_dir: str, train: bool):
@@ -88,18 +93,33 @@ def train(model, train_loader, optimizer, criterion):
     return losses, acc
 
 
-def display_confusion_matrix(actual, predicted, title):
+def create_confusion_matrix(actual, predicted):
     confusion_matrix = metrics.confusion_matrix(actual, predicted)
-    print(f"--> Confusion matrix: {confusion_matrix}")
+    confusion_matrix_df = pd.DataFrame(confusion_matrix, index=classes, columns=classes)
+    print(f"--> Confusion matrix: \n{confusion_matrix_df}")
 
-    class_bad_acc = confusion_matrix[0][0] / np.sum(confusion_matrix[0])
-    class_normal_acc = confusion_matrix[1][1] / np.sum(confusion_matrix[1])
-    print(f"--> Class: Bad accuracy: {class_bad_acc}")
-    print(f"--> Class: Normal accuracy: {class_normal_acc}")
+    # calculate per class accuracies
+    cm = confusion_matrix.astype('float') / confusion_matrix.sum(axis=1)[:, np.newaxis]
+    class_accuracies = {k: v for (k, v) in zip(classes, cm.diagonal())}
 
-    cm_display = metrics.ConfusionMatrixDisplay(confusion_matrix=confusion_matrix)
-    cm_display.plot()
-    plt.title(title)
+    # add per class accuracies to dictionary
+    for val in classes:
+        experiment_stats[val] = class_accuracies[val]
+
+    print(f"<-- Class accuracies -->\n{class_accuracies}")
+    return confusion_matrix_df
+
+
+def display_confusion_matrix(actual, predicted, title):
+    confusion_matrix = create_confusion_matrix(actual, predicted)
+
+    ax = sns.heatmap(confusion_matrix, annot=True, cmap='viridis', fmt='g')
+    ax.set(title=title)
+    plt.tight_layout()
+
+    cm_filename = f"cm_qnn_weight{weight_bit}_act{act_bit}.png"
+    cm_filepath = pathlib.Path(results_dir / cm_filename)
+    plt.savefig(cm_filepath, dpi=1000)
     plt.show()
 
 
@@ -240,61 +260,19 @@ def get_class_distribution(obj):
 
     return count_dict
 
-if __name__ == "__main__":
-    # set seed
-    torch.manual_seed(0)
-    np.random.seed(0)
 
-    # get non-quantized dataset
-    train_dataset = get_non_binarized_dataset(non_binarized_train_dataset_dir, True)
-    test_dataset = get_non_binarized_dataset(non_binarized_test_dataset_dir, False)
-
-    # dataset loaders
-    train_quantized_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    test_quantized_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
-
-    ########################################################
-    ########################################################
-    weight_bit = 2
-    act_bit = 2
-
-    # get weight of classes
-    class_count = [i for i in get_class_distribution(train_dataset.tensors[1]).values()]
-    class_weights = 1. / torch.tensor(class_count, dtype=torch.float)
-
-    # specify device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print("Target device: " + str(device))
-
-    # get QNN
-    print(f"[Quantized network] [weight: {weight_bit}][act: {act_bit}]")
-    quantized_model = get_quantized_network_with_bits(weight_bit, act_bit, num_classes)
-    quantized_model.to(device)
-
-    # specify loss criterion and optimizer
-    criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
-    optimizer = torch.optim.Adam(quantized_model.parameters(), lr=lr, betas=(0.9, 0.999))
-
-    accuracy_stats = {
-        'train': [],
-        "val": []
-    }
-    loss_stats = {
-        'train': [],
-        "val": []
-    }
-
+def begin_training_process(model, train_data_loader):
     print("--- Begin training ---")
-    for e in tqdm(range(1, 10 + 1)):
-        # TRAINING
+
+    for e in tqdm(range(1, num_epochs + 1)):
         train_epoch_loss = 0
         train_epoch_acc = 0
-        quantized_model.train()
-        for X_train_batch, y_train_batch in train_quantized_loader:
+        model.train()
+        for X_train_batch, y_train_batch in train_data_loader:
             X_train_batch, y_train_batch = X_train_batch.to(device), y_train_batch.to(device)
             optimizer.zero_grad()
 
-            y_train_pred = quantized_model(X_train_batch)
+            y_train_pred = model(X_train_batch)
 
             train_loss = criterion(y_train_pred, y_train_batch)
             train_acc = multi_acc(y_train_pred, y_train_batch)
@@ -307,75 +285,94 @@ if __name__ == "__main__":
 
         # VALIDATION
         with torch.no_grad():
-
-            val_epoch_loss = 0
-            val_epoch_acc = 0
-
-            quantized_model.eval()
+            model.eval()
             loss_stats['train'].append(train_epoch_loss / len(train_quantized_loader))
             accuracy_stats['train'].append(train_epoch_acc / len(train_quantized_loader))
             print(f'Epoch {e + 0:03}: | '
                   f'Train Loss: {train_epoch_loss / len(train_quantized_loader):.5f} | '
                   f'Train Acc: {train_epoch_acc / len(train_quantized_loader):.3f}| ')
+    display_loss_plot(loss_stats['train'])
 
-    # t = trange(10, desc="Training loss", leave=True)
-    # for epoch in t:
-    #     loss_epoch, acc_epoch = train(quantized_model, train_quantized_loader, optimizer, criterion)
-    #     test_acc, y_true, y_pred = test(quantized_model, test_quantized_loader)
-    #     t.set_description(
-    #         "Training loss = %f | train accuracy = %f | test accuracy" % (np.mean(loss_epoch), np.mean(acc_epoch)), test_acc)
-    #     t.refresh()
-    #
-    # test_acc, y_true, y_pred = test(quantized_model, test_quantized_loader)
-    # display_confusion_matrix(y_true, y_pred, f"Quantized network [weight: {weight_bit}][act: {act_bit}]")
-    # print(f"--> Test accuracy: {test_acc * 100}%")
+
+def begin_testing_process(model, test_data_loader):
+    print("--- Begin testing ---")
+    y_pred_list = []
+    with torch.no_grad():
+        model.eval()
+        for X_batch, _ in test_data_loader:
+            X_batch = X_batch.to(device)
+            y_test_pred = model(X_batch)
+            _, y_pred_tags = torch.max(y_test_pred, dim=1)
+            y_pred_list.append(y_pred_tags.cpu().numpy())
+    y_pred_list = [a.squeeze().tolist() for a in y_pred_list]
+    y_pred_arr = np.concatenate(y_pred_list)
+    y_true = test_data_loader.dataset.tensors[1]
+
+    test_acc = accuracy_score(y_true, np.concatenate(y_pred_list))
+    experiment_stats['overall_acc'] = test_acc
+
+    print(f"Accuracy: {test_acc * 100}%")
+    print(classification_report(y_true, y_pred_arr))
+    display_confusion_matrix(y_true, y_pred_arr, f"Test Accuracy = {test_acc * 100:.3f}%")
+
+
+if __name__ == "__main__":
+    # set seed
+    torch.manual_seed(0)
+    np.random.seed(0)
+
+    # get non-quantized dataset
+    train_dataset = get_non_binarized_dataset(non_binarized_train_dataset_dir, True)
+    test_dataset = get_non_binarized_dataset(non_binarized_test_dataset_dir, False)
+
+    # dataset loaders
+    train_quantized_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    test_quantized_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+
+    # get weight of classes
+    class_count = [i for i in get_class_distribution(train_dataset.tensors[1]).values()]
+    class_weights = 1. / torch.tensor(class_count, dtype=torch.float)
+
+    # specify device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("Target device: " + str(device))
 
     ########################################################
+    # EXPERIMENTS
     ########################################################
-    sys.exit(1)
-
-    ##################
-    # Quantized model
-    ##################
-    # get model for training
-    # quantized_model = get_quantized_network()
-    weight_bits = [2]
-    act_bits = [2, 4, 6, 8]
+    weight_bits = [6, 8, 16, 32]
+    act_bits = [2, 4, 6, 8, 16, 32]
     for weight_bit in weight_bits:
         for act_bit in act_bits:
+            # get QNN
             print(f"[Quantized network] [weight: {weight_bit}][act: {act_bit}]")
-            quantized_model = get_quantized_network_with_bits(weight_bit, act_bit)
-            quantized_model.to(device)
+            model = get_quantized_network_with_bits(weight_bit, act_bit, num_classes)
+
+            # print(f"[Non-Quantized network]")
+            # model = get_non_quantized_network(num_classes)
+
+            model.to(device)
 
             # specify loss criterion and optimizer
-            criterion = nn.BCEWithLogitsLoss().to(device)
-            run_model(quantized_model, train_quantized_loader, test_quantized_loader, criterion)
+            criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
+            optimizer = torch.optim.Adam(model.parameters(), lr=lr, betas=(0.9, 0.999))
 
-            test_acc, y_true, y_pred = test(quantized_model, test_quantized_loader)
-            display_confusion_matrix(y_true, y_pred, f"Quantized network [weight: {weight_bit}][act: {act_bit}]")
-            print(f"--> Test accuracy: {test_acc * 100}%")
+            accuracy_stats = {
+                'train': [],
+                "val": []
+            }
+            loss_stats = {
+                'train': [],
+                "val": []
+            }
 
-            run_latency_test(quantized_model, test_quantized_loader)
+            experiment_stats = {k: v for (k, v) in zip(['overall_acc'] + classes, list(np.zeros(num_classes,)))}
 
-            # save the brevitas model to disk
-            torch.save(quantized_model.state_dict(), "model_files/state_dict_quantized-model.pth")
+            begin_training_process(model, train_quantized_loader)
+            begin_testing_process(model, test_quantized_loader)
 
-    ######################
-    # Non-Quantized model
-    ######################
-    # get model for training
-    # non_quantized_model = get_non_quantized_network()
-    # non_quantized_model.to(device)
-    #
-    # # specify loss criterion and optimizer
-    # run_model(non_quantized_model, train_quantized_loader, test_quantized_loader, criterion)
-    #
-    # test_acc, y_true, y_pred = test(non_quantized_model, test_quantized_loader)
-    # display_confusion_matrix(y_true, y_pred, "Non-Quantized network")
-    # print("[Non-Quantized network]")
-    # print(f"--> Test accuracy: {test_acc * 100}%")
-    #
-    # run_latency_test(non_quantized_model, test_quantized_loader)
-    #
-    # # save the brevitas model to disk
-    # torch.save(non_quantized_model.state_dict(), "state_dict_non-quantized-model.pth")
+            # export experiment results to csv
+            experiment_stats_df = pd.DataFrame(experiment_stats.items())
+            filename = f"cybsec_mlp/results/qnn_weight{weight_bit}_act{act_bit}.csv"
+            filepath = pathlib.Path(results_dir / filename)
+            experiment_stats_df.to_csv(filename, sep='\t', encoding='utf-8')

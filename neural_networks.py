@@ -35,7 +35,7 @@ def get_quantized_network(num_outputs=num_classes):
     return get_quantized_network_with_bits(weight_bit_width, act_bit_width, num_outputs)
 
 
-def get_non_quantized_network():
+def get_non_quantized_network(num_outputs=num_classes):
     model = Sequential(
         Linear(input_size, hidden1, bias=True),
         BatchNorm1d(hidden1),
@@ -49,7 +49,7 @@ def get_non_quantized_network():
         BatchNorm1d(hidden3),
         Dropout(0.5),
         ReLU(),
-        Linear(hidden3, num_classes, bias=True)
+        Linear(hidden3, num_outputs, bias=True)
     )
     return model
 
